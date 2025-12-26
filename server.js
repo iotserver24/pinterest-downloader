@@ -33,6 +33,7 @@ app.get("/resolve", async (req, res) => {
 
 /**
  * Force download Pinterest media
+ * Note: For multi-item pins, this currently downloads the FIRST item.
  */
 app.get("/download", async (req, res) => {
     try {
@@ -43,18 +44,27 @@ app.get("/download", async (req, res) => {
 
         const media = await extractPinterestMedia(url);
 
-        const response = await axios.get(media.url, {
+        // Handle new standardized format (items array)
+        if (!media.items || media.items.length === 0) {
+            throw new Error("No media items found");
+        }
+
+        // Default to the first item for forced single-file download
+        const targetItem = media.items[0];
+
+        const response = await axios.get(targetItem.url, {
             responseType: "stream",
         });
 
         res.setHeader(
             "Content-Disposition",
-            `attachment; filename=pinterest.${media.format}`
+            `attachment; filename=pinterest_${Date.now()}.${targetItem.format}`
         );
 
         response.data.pipe(res);
     } catch (err) {
-        res.status(500).send("Download failed");
+        console.error("Download error:", err);
+        res.status(500).send("Download failed: " + err.message);
     }
 });
 

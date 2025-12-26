@@ -13,12 +13,13 @@ export async function extractPinterestMedia(pinUrl) {
         });
 
         const $ = cheerio.load(html);
-
         let pinData = null;
 
         // ---------------------------------------------------------
-        // STRATEGY 1: #__PWS_DATA__ (Redux State)
+        // 1. DATA EXTRACTION (Dual Strategy)
         // ---------------------------------------------------------
+
+        // Strategy A: Redux State
         const jsonText = $("#__PWS_DATA__").html();
         if (jsonText) {
             try {
@@ -27,14 +28,10 @@ export async function extractPinterestMedia(pinUrl) {
                 if (pins && Object.keys(pins).length > 0) {
                     pinData = pins[Object.keys(pins)[0]];
                 }
-            } catch (e) {
-                // ignore
-            }
+            } catch (e) { }
         }
 
-        // ---------------------------------------------------------
-        // STRATEGY 2: Relay Data in Script
-        // ---------------------------------------------------------
+        // Strategy B: Relay Data (Script Scan)
         if (!pinData) {
             $("script").each((i, el) => {
                 const content = $(el).html();
@@ -42,114 +39,159 @@ export async function extractPinterestMedia(pinUrl) {
                     try {
                         const startIdx = content.indexOf(", {");
                         const endIdx = content.lastIndexOf("});");
-
                         if (startIdx !== -1 && endIdx !== -1) {
                             const jsonString = content.substring(startIdx + 2, endIdx + 1);
                             const data = JSON.parse(jsonString);
-
                             if (data?.data?.v3GetPinQuery?.data) {
                                 pinData = data.data.v3GetPinQuery.data;
                                 return false;
                             }
                         }
-                    } catch (e) {
-                        // ignore
-                    }
+                    } catch (e) { }
                 }
             });
         }
 
         if (!pinData) {
-            throw new Error(`Pin data not found. URL: ${request.res.responseUrl}`);
+            throw new Error("Pin data not found");
         }
 
         // ---------------------------------------------------------
-        // EXTRACT MEDIA
+        // 2. PARSING LOGIC (Universal Support)
         // ---------------------------------------------------------
 
-        let videoUrl = null;
-        let videoPoster = null;
+        const items = [];
+        const hotspots = [];
 
-        // A. Standard Video
-        if ((pinData.videos && pinData.videos.video_list) || (pinData.story_pin_data && !pinData.story_pin_data.pages)) {
-            const videoList = pinData.videos?.video_list || pinData.story_pin_data?.blocks?.[0]?.video?.video_list;
-
-            if (videoList) {
-                const video =
-                    videoList.V_720P ||
-                    videoList.V_480P ||
-                    videoList.V_360P;
-
-                if (video) {
-                    videoUrl = video.url;
-                    videoPoster = pinData.images?.orig?.url;
-                }
+        // Helper to add item
+        const addItem = (type, url) => {
+            if (!url) return;
+            let format = "jpg";
+            if (type === "video") {
+                format = url.includes(".m3u8") ? "m3u8" : "mp4";
+            } else if (url.endsWith(".gif")) {
+                // GIF detection
+                type = "image"; // Keeping type as image based on request "GIF Pin" implies it's an image type usually, but user asked for "GIF Pin" support. 
+                // User pattern: { type: "image", format: "jpg", url: "..." }
+                // Let's explicitly check extension for format
+                format = "gif";
             }
-        }
+            items.push({ type, format, url });
+        };
 
-        // B. Story Pin / Idea Pin Video (Pages)
-        if (!videoUrl) {
-            const storyData = pinData.storyPinData || pinData.story_pin_data;
+        // A. STORY PINS / IDEA PINS (Multi-Page)
+        const storyData = pinData.storyPinData || pinData.story_pin_data;
+        if (storyData && storyData.pages) {
+            for (const page of storyData.pages) {
+                if (page.blocks) {
+                    for (const block of page.blocks) {
+                        // Video Block
+                        const videoObj = block.videoDataV2 || block.video;
+                        if (videoObj) {
+                            const videoList = videoObj.videoList || videoObj.video_list || {};
+                            const videoList720 = videoObj.videoList720P || {};
+                            const v =
+                                videoList720["v720P"] ||
+                                videoList["V_720P"] ||
+                                videoList["vHLSV3MOBILE"] ||
+                                videoList["vHLSV4"] ||
+                                videoList["V_FULL_HD"];
 
-            if (storyData && storyData.pages) {
-                for (const page of storyData.pages) {
-                    if (page.blocks) {
-                        for (const block of page.blocks) {
-                            // Try all known video locations: videoDataV2 (Relay) or video (Redux)
-                            const videoObj = block.videoDataV2 || block.video;
-
-                            if (videoObj) {
-                                const videoList = videoObj.videoList || videoObj.video_list || {};
-                                const videoList720 = videoObj.videoList720P || {};
-
-                                const video =
-                                    videoList720["v720P"] ||
-                                    videoList["V_720P"] ||
-                                    videoList["vHLSV3MOBILE"] ||
-                                    videoList["vHLSV4"];
-
-                                if (video && video.url) {
-                                    videoUrl = video.url;
-                                    videoPoster = videoObj.videoListMobile?.vHLSV3MOBILE?.thumbnail || block.image?.url;
-                                    break;
-                                }
-                            }
+                            if (v?.url) addItem("video", v.url);
+                        }
+                        // Image Block
+                        const imageObj = block.image;
+                        if (imageObj?.images?.orig?.url) {
+                            addItem("image", imageObj.images.orig.url);
                         }
                     }
-                    if (videoUrl) break;
                 }
             }
         }
 
-        if (videoUrl) {
-            return {
-                type: "video",
-                format: videoUrl.includes(".m3u8") ? "m3u8" : "mp4",
-                url: videoUrl,
-                poster: videoPoster
-            };
+        // B. CAROUSEL PINS
+        // Note: carousel_data might be camelCase or snake_case depending on source
+        const carouselData = pinData.carousel_data || pinData.carouselData;
+        if (items.length === 0 && carouselData && carouselData.items) {
+            for (const item of carouselData.items) {
+                // Image item
+                if (item.images?.orig?.url) {
+                    addItem("image", item.images.orig.url);
+                }
+                // Video item (mixed carousel)
+                else if (item.videos?.video_list) {
+                    const v =
+                        item.videos.video_list.V_720P ||
+                        item.videos.video_list.V_480P ||
+                        item.videos.video_list.V_360P;
+                    if (v?.url) addItem("video", v.url);
+                }
+            }
         }
 
-        // 🖼 IMAGE
-        const image =
-            pinData.images?.orig ||
-            pinData.images?.["736x"] ||
-            pinData.images?.["564x"] ||
-            pinData.imageSpec_orig ||
-            pinData.images_orig;
-
-        if (image) {
-            return {
-                type: "image",
-                format: "jpg",
-                url: image.url,
-            };
+        // C. STANDARD VIDEO
+        if (items.length === 0 && pinData.videos && pinData.videos.video_list) {
+            const v =
+                pinData.videos.video_list.V_720P ||
+                pinData.videos.video_list.V_480P ||
+                pinData.videos.video_list.V_360P;
+            if (v?.url) addItem("video", v.url);
         }
 
-        throw new Error("No usable media found in Pin data");
+        // D. STANDARD IMAGE (Fallback)
+        if (items.length === 0) {
+            const image =
+                pinData.images?.orig ||
+                pinData.images?.["736x"] ||
+                pinData.images?.["564x"] ||
+                pinData.imageSpec_orig ||
+                pinData.images_orig;
+
+            if (image?.url) {
+                // GIF Check: Pinterest often stores GIFs in images.orig with .gif extension
+                addItem("image", image.url);
+            }
+        }
+
+        // E. HOTSPOTS
+        if (pinData.hotspots) {
+            for (const h of pinData.hotspots) {
+                if (h.link?.url) {
+                    // Ensure full URL if relative
+                    const fullUrl = h.link.url.startsWith("http") ? h.link.url : `https://www.pinterest.com${h.link.url}`;
+                    hotspots.push({ pin_url: fullUrl });
+                }
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 3. RESPONSE CONSTRUCTION
+        // ---------------------------------------------------------
+
+        if (items.length === 0) {
+            throw new Error("No media items found");
+        }
+
+        // Determine high-level type
+        let finalType = "image";
+        if (items.length > 1) {
+            finalType = "multi"; // Carousel or Story
+        } else if (items[0].type === "video") {
+            finalType = "video";
+        }
+
+        const response = {
+            type: finalType,
+            items: items
+        };
+
+        if (hotspots.length > 0) {
+            response.hotspots = hotspots;
+        }
+
+        return response;
 
     } catch (err) {
-        console.error("Extraction error:", err);
         throw new Error(`Failed to resolve Pinterest media: ${err.message}`);
     }
 }
