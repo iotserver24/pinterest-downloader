@@ -69,11 +69,9 @@ export async function extractPinterestMedia(pinUrl) {
             let format = "jpg";
             if (type === "video") {
                 format = url.includes(".m3u8") ? "m3u8" : "mp4";
-            } else if (url.endsWith(".gif")) {
+            } else if (url.indexOf(".gif") !== -1) {
                 // GIF detection
-                type = "image"; // Keeping type as image based on request "GIF Pin" implies it's an image type usually, but user asked for "GIF Pin" support. 
-                // User pattern: { type: "image", format: "jpg", url: "..." }
-                // Let's explicitly check extension for format
+                type = "gif";
                 format = "gif";
             }
             items.push({ type, format, url });
@@ -109,25 +107,7 @@ export async function extractPinterestMedia(pinUrl) {
             }
         }
 
-        // B. CAROUSEL PINS
-        // Note: carousel_data might be camelCase or snake_case depending on source
-        const carouselData = pinData.carousel_data || pinData.carouselData;
-        if (items.length === 0 && carouselData && carouselData.items) {
-            for (const item of carouselData.items) {
-                // Image item
-                if (item.images?.orig?.url) {
-                    addItem("image", item.images.orig.url);
-                }
-                // Video item (mixed carousel)
-                else if (item.videos?.video_list) {
-                    const v =
-                        item.videos.video_list.V_720P ||
-                        item.videos.video_list.V_480P ||
-                        item.videos.video_list.V_360P;
-                    if (v?.url) addItem("video", v.url);
-                }
-            }
-        }
+        // B. REMOVED CAROUSEL (User Request)
 
         // C. STANDARD VIDEO
         if (items.length === 0 && pinData.videos && pinData.videos.video_list) {
@@ -148,7 +128,6 @@ export async function extractPinterestMedia(pinUrl) {
                 pinData.images_orig;
 
             if (image?.url) {
-                // GIF Check: Pinterest often stores GIFs in images.orig with .gif extension
                 addItem("image", image.url);
             }
         }
@@ -175,9 +154,11 @@ export async function extractPinterestMedia(pinUrl) {
         // Determine high-level type
         let finalType = "image";
         if (items.length > 1) {
-            finalType = "multi"; // Carousel or Story
+            finalType = "multi"; // Story
         } else if (items[0].type === "video") {
             finalType = "video";
+        } else if (items[0].type === "gif") {
+            finalType = "gif";
         }
 
         const response = {

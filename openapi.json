@@ -1,0 +1,230 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Pinterest Downloader API",
+        "description": "A high-performance, privacy-focused API to extract high-quality media (Video, Images, Story Pins) from Pinterest without authentication.",
+        "version": "1.0.0",
+        "contact": {
+            "name": "API Support",
+            "url": "https://github.com/iotserver24/pinterest-downloader"
+        }
+    },
+    "servers": [
+        {
+            "url": "/",
+            "description": "Current Server"
+        }
+    ],
+    "paths": {
+        "/resolve": {
+            "get": {
+                "summary": "Resolve Pinterest URL",
+                "description": "Extracts direct media URLs from a Pinterest Pin URL. Supports Videos, Images, Story Pins, and GIFs.",
+                "operationId": "resolvePin",
+                "parameters": [
+                    {
+                        "name": "url",
+                        "in": "query",
+                        "description": "The Pinterest Pin URL (e.g., https://pin.it/... or https://pinterest.com/pin/...)",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "example": "https://pin.it/2u9bHtUx6"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful extraction",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SingleMediaResponse"
+                                        },
+                                        {
+                                            "$ref": "#/components/schemas/MultiMediaResponse"
+                                        }
+                                    ]
+                                },
+                                "examples": {
+                                    "video": {
+                                        "summary": "Single Video",
+                                        "value": {
+                                            "type": "video",
+                                            "items": [
+                                                {
+                                                    "type": "video",
+                                                    "format": "mp4",
+                                                    "url": "https://v1.pinimg.com/videos/...",
+                                                    "poster": "https://i.pinimg.com/..."
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "image": {
+                                        "summary": "Single Image",
+                                        "value": {
+                                            "type": "image",
+                                            "items": [
+                                                {
+                                                    "type": "image",
+                                                    "format": "jpg",
+                                                    "url": "https://i.pinimg.com/originals/..."
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "gif": {
+                                        "summary": "GIF",
+                                        "value": {
+                                            "type": "gif",
+                                            "items": [
+                                                {
+                                                    "type": "gif",
+                                                    "format": "gif",
+                                                    "url": "https://i.pinimg.com/originals/... .gif"
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "story": {
+                                        "summary": "Story Pin (Multi)",
+                                        "value": {
+                                            "type": "multi",
+                                            "items": [
+                                                {
+                                                    "type": "image",
+                                                    "format": "jpg",
+                                                    "url": "..."
+                                                },
+                                                {
+                                                    "type": "video",
+                                                    "format": "mp4",
+                                                    "url": "..."
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (Missing URL)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Server Error or Extraction Failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "MediaItem": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "image",
+                            "video",
+                            "gif"
+                        ]
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": [
+                            "jpg",
+                            "png",
+                            "mp4",
+                            "m3u8",
+                            "gif"
+                        ]
+                    },
+                    "url": {
+                        "type": "string"
+                    },
+                    "poster": {
+                        "type": "string",
+                        "description": "URL of the video thumbnail (optional)"
+                    }
+                }
+            },
+            "SingleMediaResponse": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "image",
+                            "video",
+                            "gif"
+                        ]
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MediaItem"
+                        }
+                    },
+                    "hotspots": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "pin_url": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "MultiMediaResponse": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "const": "multi"
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MediaItem"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
