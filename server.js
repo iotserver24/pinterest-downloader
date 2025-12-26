@@ -1,9 +1,27 @@
 import express from "express";
 import axios from "axios";
+import rateLimit from "express-rate-limit"; // Import rate limit
 import { extractPinterestMedia } from "./extractMedia.js";
 
 const app = express();
 const PORT = 3000;
+
+// Rate Limiter Configuration
+const limiter = rateLimit({
+    windowMs: 1000, // 1 second
+    max: parseInt(process.env.RATE_LIMIT_MAX) || 1, // Limit each IP to 1 request per second (default)
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    message: {
+        error: "Too many requests, please try again later.",
+    },
+});
+
+// Apply the rate limiting middleware to all requests
+app.use(limiter);
+
+// Make sure to trust proxy if running behind a reverse proxy (like Docker/Nginx often implies)
+app.set('trust proxy', 1);
 
 // Simple request logger
 app.use((req, res, next) => {
