@@ -67,15 +67,6 @@ curl "http://localhost:3000/resolve?url=https://pin.it/2u9bHtUx6"
 }
 ```
 
-### Force Download (File)
-
-**Endpoint:** `GET /download`
-
-Downloads the media file directly. if multiple items exist, downloads the first one.
-
-**Example:**
-`http://localhost:3000/download?url=https://pin.it/2u9bHtUx6`
-
 ## ⚙️ Configuration
 
 | Environment Variable | Default | Description |

@@ -30,6 +30,50 @@ app.use((req, res, next) => {
 });
 
 /**
+ * Root Page: Usage Guide (Dynamic URL)
+ */
+app.get("/", (req, res) => {
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+    const host = req.get("host");
+    const baseUrl = `${protocol}://${host}`;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pinterest Downloader API</title>
+  <style>
+    :root { --bg: #0f172a; --text: #f8fafc; --accent: #38bdf8; --code-bg: #1e293b; }
+    body { font-family:system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; text-align: center; }
+    h1 { margin-bottom: 0.5rem; font-size: 2.5rem; }
+    p { opacity: 0.8; max-width: 600px; line-height: 1.6; }
+    .card { background: var(--code-bg); padding: 2rem; border-radius: 12px; border: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); margin-top: 2rem; max-width: 100%; width: 600px; text-align: left; }
+    code { font-family: 'Fira Code', 'Courier New', monospace; color: var(--accent); white-space: pre-wrap; word-break: break-all; }
+    .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; font-weight: bold; margin-bottom: 0.5rem; display: block; }
+  </style>
+</head>
+<body>
+  <h1>Pinterest Downloader API 🗿</h1>
+  <p>A high-performance, privacy-focused API to extract high-quality media (Video, Images, Story Pins) from Pinterest.</p>
+  
+  <div class="card">
+    <span class="label">Universal Resolver Endpoint</span>
+    <code>curl "${baseUrl}/resolve?url=https://pin.it/2u9bHtUx6"</code>
+  </div>
+
+  <p style="margin-top: 2rem; font-size: 0.875rem; opacity: 0.5;">
+    Rate Limit: ${process.env.RATE_LIMIT_MAX || 1} req/sec • No Login Required
+  </p>
+</body>
+</html>
+  `;
+
+    res.send(html);
+});
+
+/**
  * Resolve Pinterest link → JSON (direct URL)
  */
 app.get("/resolve", async (req, res) => {
@@ -46,43 +90,6 @@ app.get("/resolve", async (req, res) => {
             error: "Failed to resolve Pinterest media",
             message: err.message,
         });
-    }
-});
-
-/**
- * Force download Pinterest media
- * Note: For multi-item pins, this currently downloads the FIRST item.
- */
-app.get("/download", async (req, res) => {
-    try {
-        const { url } = req.query;
-        if (!url) {
-            return res.status(400).send("Missing url parameter");
-        }
-
-        const media = await extractPinterestMedia(url);
-
-        // Handle new standardized format (items array)
-        if (!media.items || media.items.length === 0) {
-            throw new Error("No media items found");
-        }
-
-        // Default to the first item for forced single-file download
-        const targetItem = media.items[0];
-
-        const response = await axios.get(targetItem.url, {
-            responseType: "stream",
-        });
-
-        res.setHeader(
-            "Content-Disposition",
-            `attachment; filename=pinterest_${Date.now()}.${targetItem.format}`
-        );
-
-        response.data.pipe(res);
-    } catch (err) {
-        console.error("Download error:", err);
-        res.status(500).send("Download failed: " + err.message);
     }
 });
 
